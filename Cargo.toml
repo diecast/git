@@ -6,12 +6,7 @@ authors = ["Jorge Israel Peña <jorge.israel.p@gmail.com>"]
 [dependencies]
 toml = "*"
 typemap = "*"
-
-# 0.3.1 seems to have a performance regression
-# libgit2-sys = "=0.3.2"
-# git2 = "=0.3.0"
-git2 = { path = "../../git2-rs" }
-
+git2 = "*"
 log = "*"
 env_logger = "*"
 
