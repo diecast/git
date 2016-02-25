@@ -80,6 +80,7 @@ pub fn git(bind: &mut Bind) -> diecast::Result<()> {
     let mut cache: HashMap<Oid, Arc<Git>> = HashMap::new();
 
     for id in revwalk {
+        let id = try!(id);
         let commit = try!(repo.find_commit(id));
         let parents = commit.parents().len();
 
@@ -88,11 +89,11 @@ pub fn git(bind: &mut Bind) -> diecast::Result<()> {
 
         let is_root = parents == 0;
 
-        fn match_with_parent(repo: &Repository, commit: &Commit, parent: &Commit,
-                             opts: &mut DiffOptions) -> Result<Diff, Error> {
+        fn match_with_parent<'a>(repo: &'a Repository, commit: &Commit, parent: &Commit,
+                                 opts: &'a mut DiffOptions) -> Result<Diff<'a>, Error> {
             let a = try!(parent.tree());
             let b = try!(commit.tree());
-            let diff = try!(Diff::tree_to_tree(repo, Some(&a), Some(&b), Some(opts)));
+            let diff = try!(repo.diff_tree_to_tree(Some(&a), Some(&b), Some(opts)));
             Ok(diff)
         }
 
@@ -102,7 +103,7 @@ pub fn git(bind: &mut Bind) -> diecast::Result<()> {
 
         enum MatchKind<'a> {
             Tree(Tree<'a>),
-            Diff(Diff),
+            Diff(Diff<'a>),
         }
 
         let match_kind =
