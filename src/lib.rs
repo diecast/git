@@ -1,40 +1,44 @@
+extern crate diecast;
+extern crate env_logger;
 extern crate git2;
 extern crate typemap;
-extern crate diecast;
 
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::mem;
+use std::{mem, str};
 
 use diecast::{Item, Bind};
 
+use git2::{
+    Repository,
+    Pathspec,
+    Commit,
+    DiffOptions,
+    Error,
+    Diff,
+    Tree,
+    Oid,
+};
+
 #[derive(Clone)]
-pub struct Git {
-    pub sha: git2::Oid,
-    pub message: String,
+pub struct LastCommit {
+    pub sha: String,
+    pub summary: String,
+    pub time: git2::Time,
 }
 
-impl typemap::Key for Git {
-    type Value = Arc<Git>;
+impl typemap::Key for LastCommit {
+    type Value = Arc<LastCommit>;
 }
 
 pub fn git(bind: &mut Bind) -> diecast::Result<()> {
-    use std::collections::{HashMap, VecDeque};
-    use git2::{
-        Repository,
-        Pathspec,
-        Commit,
-        DiffOptions,
-        Error,
-        Diff,
-        Tree,
-        Oid,
-    };
-
-    let repo = match Repository::open(".") {
+    // since this uses discover, the git repo is looked up the
+    // fs hierarchy until one is found. this means that even with github-pages'
+    // behavior of making cwd .build/, it'll find the git repo at the root
+    let repo = match Repository::discover(".") {
         Ok(r) => r,
         Err(e) => {
             trace!("(git) {:?}: {}", bind, e);
@@ -63,13 +67,17 @@ pub fn git(bind: &mut Bind) -> diecast::Result<()> {
 
         diffopts.pathspec(path.to_str().unwrap());
 
-        let pathspec = Pathspec::new(Some(path.to_str().unwrap()).into_iter()).unwrap();
+        let p = Some(path.to_str().unwrap());
+        let pathspec = Pathspec::new(p.into_iter()).unwrap();
         paths.push_back((item, pathspec));
     }
 
     let mut revwalk = repo.revwalk().unwrap();
 
-    match revwalk.push_head() {
+    let commit = try!(repo.revparse_single("origin/master")
+                      .and_then(|r| r.peel(git2::ObjectType::Commit)));
+
+    match revwalk.push(commit.id()) {
         Ok(_) => (),
         Err(e) => {
             trace!("(git): {}", e);
@@ -77,11 +85,11 @@ pub fn git(bind: &mut Bind) -> diecast::Result<()> {
         },
     }
 
-    let mut cache: HashMap<Oid, Arc<Git>> = HashMap::new();
+    let mut cache: HashMap<Oid, Arc<LastCommit>> = HashMap::new();
 
     for id in revwalk {
         let id = try!(id);
-        let commit = try!(repo.find_commit(id));
+        let mut commit = try!(repo.find_commit(id));
         let parents = commit.parents().len();
 
         // ignore merge commits
@@ -128,12 +136,22 @@ pub fn git(bind: &mut Bind) -> diecast::Result<()> {
             let git =
                 cache.entry(commit.id())
                 .or_insert_with(|| {
-                    let message = String::from_utf8_lossy(commit.message_bytes()).into_owned();
-                    Arc::new(Git { sha: commit.id(), message: message })
+                    let summary = String::from(commit.summary().unwrap());
+
+                    // the day that a commit sha isn't valid utf8, we'll have
+                    // bigger problems
+                    let sha = String::from(unsafe {
+                        str::from_utf8_unchecked(commit.id().as_bytes())
+                    });
+                    Arc::new(LastCommit {
+                        sha: sha,
+                        summary: summary,
+                        time: commit.time(),
+                    })
                 })
                 .clone();
 
-            item.extensions.insert::<Git>(git);
+            item.extensions.insert::<LastCommit>(git);
         }
     }
 
