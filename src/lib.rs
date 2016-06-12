@@ -165,12 +165,8 @@ impl Handle<Bind> for GitCommit {
                     cache.entry(commit.id())
                     .or_insert_with(|| {
                         let summary = String::from(commit.summary().unwrap());
+                        let sha = commit.id().to_string();
 
-                        // the day that a commit sha isn't valid utf8, we'll have
-                        // bigger problems
-                        let sha = String::from(unsafe {
-                            str::from_utf8_unchecked(commit.id().as_bytes())
-                        });
                         Arc::new(LastCommit {
                             sha: sha,
                             summary: summary,
